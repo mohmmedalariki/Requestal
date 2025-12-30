@@ -1,0 +1,78 @@
+@import "tailwindcss";
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  font-family: 'Inter', sans-serif;
+}
+
+/* React Resizable Styles */
+.react-resizable {
+  position: relative;
+  box-sizing: border-box;
+}
+
+.react-resizable-handle {
+  position: absolute;
+  width: 10px;
+  height: 100%;
+  top: 0;
+  right: 0;
+  padding: 0 3px 3px 0;
+  background-repeat: no-repeat;
+  background-origin: content-box;
+  box-sizing: border-box;
+  cursor: col-resize;
+  z-index: 10;
+}
+
+/* Custom separator for sidebar (east handle) */
+.react-resizable-handle-e {
+  cursor: col-resize;
+  width: 10px;
+  right: -5px;
+  /* Centers the handle over the border */
+  top: 0;
+  bottom: 0;
+  z-index: 50;
+}
+
+/* Custom separator for editor (south handle) */
+.react-resizable-handle-s {
+  height: 10px;
+  width: 100%;
+  bottom: 0;
+  left: 0;
+  cursor: row-resize;
+  background: transparent;
+  z-index: 10;
+}
+
+/* Hover effects for handles to show they are interactive */
+.react-resizable-handle:hover::after {
+  position: absolute;
+  background-color: #3b82f6;
+  /* blue-500 */
+  transition: background-color 0.2s;
+}
+
+.react-resizable-handle-e:hover::after {
+  content: "";
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  /* Center in 10px width */
+  width: 2px;
+}
+
+.react-resizable-handle-s:hover::after {
+  content: "";
+  left: 0;
+  right: 0;
+  top: 4px;
+  /* Center in 10px height */
+  height: 2px;
+}

@@ -1,0 +1,41 @@
+{
+    "manifest_version": 3,
+    "name": "Requestal",
+    "version": "0.1.0",
+    "description": "Professional Fuzzing Workflow Extension",
+    "side_panel": {
+        "default_path": "sidepanel.html"
+    },
+    "background": {
+        "service_worker": "assets/background.js",
+        "type": "module"
+    },
+    "permissions": [
+        "sidePanel",
+        "webRequest",
+        "storage",
+        "clipboardWrite",
+        "activeTab"
+    ],
+    "host_permissions": [
+        "<all_urls>"
+    ],
+    "action": {
+        "default_title": "Open Requestal Side Panel",
+        "default_icon": "assets/icon.png"
+    },
+    "icons": {
+        "16": "assets/icon.png",
+        "48": "assets/icon.png",
+        "128": "assets/icon.png"
+    },
+    "commands": {
+        "_execute_side_panel": {
+            "suggested_key": {
+                "default": "Ctrl+Shift+P",
+                "mac": "Command+Shift+P"
+            },
+            "description": "Open Requestal Side Panel"
+        }
+    }
+}
