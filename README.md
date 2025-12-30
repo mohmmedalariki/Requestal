@@ -3,6 +3,8 @@
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Version](https://img.shields.io/badge/version-0.1.0-green.svg)
 
+![Requestal Side Panel](screenshots/SidePanel.png)
+
 **Requestal** is a professional-grade Chrome DevTools extension designed to bridge the gap between manual web testing and automated fuzzing. It resides in the browser's Side Panel, allowing security researchers and developers to capture, analyze, modify, and replay network requests without leaving their workflow context.
 
 Unlike standard network tools, Requestal focuses on **smart automation**—handling format conversions, eliminating noise in diffs, and enforcing RFC compliance—capturing the nuance of complex web interactions that command-line tools often miss.
@@ -26,9 +28,15 @@ A unique engine that keeps the `Content-Type` header and the request body in syn
 An internal HTTP client allows for immediate verification of payloads.
 -   **Dispatcher**: Executes requests directly from the extension context, preserving session cookies and credentials.
 -   **Protocol Enforcement**: Automatically enforces `https://` and cleans unsafe headers (like `Host`) to prevent browser blocking.
+
+![Response View](screenshots/Response.png)
+
 -   **Response Diffing**:
     -   **Baseline Pinning**: Pin a request to store its "known good" state (both request and response).
     -   **Visual Diff**: Subsequent requests (e.g., after modifying a payload) are compared against the pinned baseline.
+    
+    ![Diff View](screenshots/Comparing.png)
+
     -   **Smart Diff**: Ignores trivial changes (timestamps, nonces) to highlight only semantic differences (status codes, error messages).
 
 ---
@@ -41,6 +49,8 @@ An internal HTTP client allows for immediate verification of payloads.
 3.  **Modify**: Edit the JSON body to inject a SQL payload.
 4.  **Send**: Click "Send".
 5.  **Analyze**: The "Response" tab immediately shows a diff where the server's error message appeared, ignoring the timestamp change in the header.
+
+![Editing Request](screenshots/Editing.png)
 
 ### Format Shifting
 1.  **Capture**: Capture a standard JSON API request.
