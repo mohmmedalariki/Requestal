@@ -92,5 +92,5 @@ An internal HTTP client allows for immediate verification of payloads.
     -   Click **Load unpacked**
     -   Select the `dist` folder
 
----
+----
 
