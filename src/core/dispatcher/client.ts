@@ -1,18 +1,35 @@
 
 /**
- * Parses a raw HTTP request string into components for fetch().
+ * Request Dispatcher
+ * Handles parsing raw HTTP strings and executing them via the Fetch API.
  */
-export function parseRawRequest(raw: string): { method: string, url: string, headers: HeadersInit, body: string | null } {
+
+interface ParsedRequest {
+    method: string;
+    url: string;
+    headers: HeadersInit;
+    body: string | null;
+}
+
+export interface DispatchResponse {
+    status: number;
+    statusText: string;
+    headers: Record<string, string>;
+    body: string;
+    timeMs: number;
+}
+
+/**
+ * Parses a raw HTTP request string into components suitable for fetch().
+ * Handles Request Line, Headers, and Body separation.
+ */
+export function parseRawRequest(raw: string): ParsedRequest {
     const lines = raw.split('\n');
-    const firstLine = lines[0].trim();
-    const parts = firstLine.split(' ');
+    const [method, url] = lines[0].trim().split(' ');
 
-    if (parts.length < 2) {
-        throw new Error("Invalid Request Line");
+    if (!method || !url) {
+        throw new Error("Invalid Request Line: Missing method or URL");
     }
-
-    const method = parts[0].toUpperCase();
-    let url = parts[1];
 
     const headers: Record<string, string> = {};
     let bodyStartPosition = -1;
@@ -31,29 +48,21 @@ export function parseRawRequest(raw: string): { method: string, url: string, hea
         }
     }
 
-    // Handle body
     let body: string | null = null;
     if (bodyStartPosition > -1 && bodyStartPosition < lines.length) {
         body = lines.slice(bodyStartPosition).join('\n');
     }
 
-    if (['GET', 'HEAD'].includes(method)) {
+    if (['GET', 'HEAD'].includes(method.toUpperCase())) {
         body = null;
     }
 
-    return { method, url, headers, body };
-}
-
-export interface DispatchResponse {
-    status: number;
-    statusText: string;
-    headers: Record<string, string>;
-    body: string;
-    timeMs: number;
+    return { method: method.toUpperCase(), url, headers, body };
 }
 
 /**
- * Executes a raw HTTP request using the browser's fetch API.
+ * Executes a raw HTTP request.
+ * Enforces HTTPS for relative URLs if Host header is present.
  */
 export async function dispatchRequest(rawRequest: string): Promise<DispatchResponse> {
     const start = performance.now();
@@ -62,23 +71,15 @@ export async function dispatchRequest(rawRequest: string): Promise<DispatchRespo
         const { method, url, headers, body } = parseRawRequest(rawRequest);
         const headersRecord = headers as Record<string, string>;
 
-        // Ensure URL is absolute
         let finalUrl = url;
+
+        // Protocol enforcement & absolute URL construction
         if (!finalUrl.startsWith('http')) {
-            // Try to find Host header
-            // Case-insensitive lookup
             const hostKey = Object.keys(headersRecord).find(k => k.toLowerCase() === 'host');
-
             if (hostKey) {
-                // **PROTOCOL ENFORCEMENT**: Always default to HTTPS
-                // The user explicitly requested to prepend https://
                 finalUrl = `https://${headersRecord[hostKey]}${url}`;
-
-                // **HEADER CLEANING**: Remove Host header to avoid browser blocking
-                // "Refused to set unsafe header "Host""
-                delete headersRecord[hostKey];
+                delete headersRecord[hostKey]; // Prevent "Unsafe Header" error
             } else {
-                // Fallback if no host header (rare in raw reqs)
                 throw new Error("Missing Host header for relative URL dispatch");
             }
         }
@@ -87,16 +88,14 @@ export async function dispatchRequest(rawRequest: string): Promise<DispatchRespo
             method,
             headers: headersRecord,
             body,
-            credentials: 'include', // **SESSION PERSISTENCE**
+            credentials: 'include',
             mode: 'cors',
         });
 
         const end = performance.now();
-        const timeMs = Math.round(end - start);
-
         const responseText = await response.text();
-
         const responseHeaders: Record<string, string> = {};
+
         response.headers.forEach((val, key) => {
             responseHeaders[key] = val;
         });
@@ -106,19 +105,16 @@ export async function dispatchRequest(rawRequest: string): Promise<DispatchRespo
             statusText: response.statusText,
             headers: responseHeaders,
             body: responseText,
-            timeMs
+            timeMs: Math.round(end - start)
         };
 
     } catch (error: any) {
         const end = performance.now();
-
-        // **ERROR HANDLING**: Capture protocol errors (e.g., TypeError for CORS or Network)
-        // Return them as a valid response object so they show up in the UI
         return {
             status: 0,
             statusText: 'Client Error',
             headers: {},
-            body: `Request Failed: ${error.message}\n\nCheck console for CORS details or ensure the target supports HTTPS.`,
+            body: `Request Failed: ${error.message}\n\nCheck console for details.`,
             timeMs: Math.round(end - start)
         };
     }

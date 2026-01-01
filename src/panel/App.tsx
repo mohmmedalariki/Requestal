@@ -1,192 +1,68 @@
-import { useState, useEffect, useRef } from 'react';
+
+import { useState, useEffect } from 'react';
 import { ResizableBox } from 'react-resizable';
-import { RequestEditor } from '../components/RequestEditor';
-import { RequestDiffEditor } from '../components/RequestDiffEditor';
-import { harToRaw } from '../utils/http';
-import { saveBaseline, getBaseline, clearBaseline } from '../utils/storage';
-import { smartDiff } from '../utils/diffEngine';
-import { jsonToForm, formToJson, detectFormat } from '../utils/bodyConverter';
-import { dispatchRequest, type DispatchResponse } from '../utils/dispatcher';
-import { Copy, Shield, Network, Trash2, Search, Filter, Pin, ArrowRightLeft, Spline, Activity, Check, RefreshCw, AlertTriangle, Play, Loader2, FileText, Server } from 'lucide-react';
 import clsx from 'clsx';
+import { Network, Trash2, Search, Filter, Pin, ArrowRightLeft, Spline, Activity, Check, RefreshCw, AlertTriangle, Play, Loader2, FileText, Server, Shield, Copy } from 'lucide-react';
+
+import { RequestEditor } from './components/RequestEditor';
+import { RequestDiffEditor } from './components/RequestDiffEditor';
+import { harToRaw } from '../shared/utils/http';
+import { smartDiff } from '../core/diff/engine';
+import { dispatchRequest, type DispatchResponse } from '../core/dispatcher/client';
+
+import { useRequestManager } from './hooks/useRequestManager';
+import { useEditorState } from './hooks/useEditorState';
 
 function App() {
-    const [requests, setRequests] = useState<any[]>([]);
-    const [selectedIdx, setSelectedIdx] = useState<number>(-1);
-    const [editorContent, setEditorContent] = useState('');
-
-    // UI Functionality State
+    // UI State
     const [cleanMode, setCleanMode] = useState(false);
     const [smartDiffMode, setSmartDiffMode] = useState(false);
-    const [followTraffic, setFollowTraffic] = useState(false);
     const [smartFormatMode, setSmartFormatMode] = useState(true);
     const [sidebarWidth, setSidebarWidth] = useState(300);
-    const [filterQuery, setFilterQuery] = useState('');
-
-    // Send & Response State
     const [activeTab, setActiveTab] = useState<'request' | 'response'>('request');
+
+    // Dispatcher State
     const [isLoading, setIsLoading] = useState(false);
     const [latestResponse, setLatestResponse] = useState<DispatchResponse | null>(null);
-
-    // Baseline State
-    const [baselineRequest, setBaselineRequest] = useState<any | null>(null);
-    const [baselineResponse, setBaselineResponse] = useState<DispatchResponse | null>(null);
-    const [baselineRaw, setBaselineRaw] = useState<string>('');
-
-    // Copy & Validation State
     const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'error'>('idle');
-    const [validationError, setValidationError] = useState<string | null>(null);
-    const [formatWarning, setFormatWarning] = useState<string | null>(null);
 
-    // Refs
-    const requestsRef = useRef(requests);
-    requestsRef.current = requests;
-    const followTrafficRef = useRef(followTraffic);
-    followTrafficRef.current = followTraffic;
-    const prevContentTypeRef = useRef<string | null>(null);
+    // Custom Hooks
+    const {
+        requests,
+        selectedIdx,
+        setSelectedIdx,
+        filterQuery,
+        setFilterQuery,
+        followTraffic,
+        setFollowTraffic,
+        baselineRequest,
+        baselineResponse,
+        baselineRaw,
+        handlePin,
+        handleUnpin,
+        handleClear,
+        filteredRequests
+    } = useRequestManager(cleanMode);
 
-    // Load baseline on mount
-    useEffect(() => {
-        getBaseline().then(data => {
-            if (data) {
-                setBaselineRequest(data.request);
-                setBaselineRaw(harToRaw(data.request, cleanMode));
-                if (data.response) {
-                    setBaselineResponse(data.response);
-                }
-            }
-        });
-    }, []);
+    const {
+        content: editorContent,
+        setContent: setEditorContent,
+        validationError,
+        formatWarning
+    } = useEditorState({ smartFormatMode });
 
-    // Re-process baseline raw
-    useEffect(() => {
-        if (baselineRequest) {
-            setBaselineRaw(harToRaw(baselineRequest, cleanMode));
-        }
-    }, [cleanMode, baselineRequest]);
-
-    // Handle Pinning
-    const handlePin = (req: any, e?: React.MouseEvent) => {
-        e?.stopPropagation();
-        setBaselineRequest(req);
-
-        // If we are pinning the currently selected request AND we have a latest response for it
-        // we should pin the response too. 
-        // Simplified Logic: If we Pin, we pin the *current view state* if possible. 
-        // But usually Pin happens on the list item.
-        // Strategy: If 'latestResponse' corresponds to the pinned request, pin it.
-        // For now, let's just pin the request. If the user wants to pin response, maybe we need explicit action or auto-pin if 'latestResponse' is fresh?
-        // Let's go with: If we Pin, and we have a latestResponse, assume it belongs to this interaction context (since we only have one active response state).
-        // Note: This might be inaccurate if user navigates away. But typical workflow: Select -> Send -> Pin. 
-
-        const resToPin = (selectedIdx !== -1 && requests[selectedIdx] === req) ? latestResponse : null;
-        setBaselineResponse(resToPin);
-
-        saveBaseline(req, resToPin);
-    };
-
-    const handleUnpin = (e?: React.MouseEvent) => {
-        e?.stopPropagation();
-        setBaselineRequest(null);
-        setBaselineResponse(null);
-        clearBaseline();
-    };
-
-    // Listener setup
-    useEffect(() => {
-        const messageListener = (message: any) => {
-            if (message.type === 'NEW_REQUEST') {
-                const newReq = message.payload;
-                setRequests(prev => {
-                    const updated = [...prev, newReq];
-                    if (followTrafficRef.current) {
-                        setTimeout(() => setSelectedIdx(updated.length - 1), 0);
-                    }
-                    return updated;
-                });
-            }
-        };
-        chrome.runtime.onMessage.addListener(messageListener);
-        return () => chrome.runtime.onMessage.removeListener(messageListener);
-    }, []);
-
-    // Update editor content when selection changes
+    // Sync Editor with Selection
     useEffect(() => {
         if (selectedIdx >= 0 && selectedIdx < requests.length) {
             const raw = harToRaw(requests[selectedIdx], cleanMode);
             setEditorContent(raw);
             setCopyStatus('idle');
-            setValidationError(null);
-            setFormatWarning(null);
-
-            // Reset Response State on navigation (unless we want to keep it? usually navigation = new context)
-            // Actually, keeping previous response might be confusing. Let's clear it to encourage sending new one.
             setLatestResponse(null);
-            setActiveTab('request'); // Auto switch back to request view
-
-            const match = raw.match(/^content-type:\s*(.*)$/im);
-            prevContentTypeRef.current = match ? match[1].trim() : null;
+            setActiveTab('request');
         }
-    }, [selectedIdx, cleanMode, requests]);
+    }, [selectedIdx, cleanMode, requests, setEditorContent]);
 
-
-    // Body Sync & Validation Logic
-    useEffect(() => {
-        if (!editorContent) return;
-
-        const lines = editorContent.split('\n');
-        const headerEndIndex = lines.findIndex(l => l.trim() === '');
-        const body = headerEndIndex !== -1 ? lines.slice(headerEndIndex + 1).join('\n') : '';
-
-        const match = editorContent.match(/^content-type:\s*(.*)$/im);
-        const currentContentType = match ? match[1].trim().toLowerCase() : null;
-
-        /* Format Sync Logic */
-        if (smartFormatMode && prevContentTypeRef.current && currentContentType && prevContentTypeRef.current !== currentContentType) {
-            const isJson = currentContentType.includes('application/json');
-            const isForm = currentContentType.includes('application/x-www-form-urlencoded');
-            const prevIsJson = prevContentTypeRef.current.includes('application/json');
-            const prevIsForm = prevContentTypeRef.current.includes('application/x-www-form-urlencoded');
-
-            let newBody = body;
-            let converted = false;
-
-            if (isJson && prevIsForm) {
-                try { newBody = formToJson(body); converted = true; } catch (e) { }
-            } else if (isForm && prevIsJson) {
-                try { newBody = jsonToForm(body); converted = true; } catch (e) { }
-            }
-
-            if (converted) {
-                const newContent = lines.slice(0, headerEndIndex + 1).join('\n') + '\n' + newBody;
-                if (newContent !== editorContent) setEditorContent(newContent);
-            }
-        }
-        prevContentTypeRef.current = currentContentType || null;
-
-
-        // Validation
-        let warning = null;
-        let error = null;
-        const bodyFormat = detectFormat(body);
-
-        if (currentContentType) {
-            if (currentContentType.includes('application/json')) {
-                try { if (body.trim()) JSON.parse(body); } catch (e) { error = "Invalid JSON Body"; }
-            } else if (currentContentType.includes('application/x-www-form-urlencoded')) {
-                if (bodyFormat === 'json') {
-                    error = "RFC Violation: Form Header with JSON Body";
-                }
-            }
-        } else if (bodyFormat === 'json') {
-            warning = "Detected JSON body. Missing Content-Type?";
-        }
-        setValidationError(error);
-        setFormatWarning(warning);
-
-    }, [editorContent, smartFormatMode]);
-
-
+    // Handlers
     const handleSmartCopy = () => {
         if (validationError) {
             setCopyStatus('error');
@@ -198,13 +74,6 @@ function App() {
         setTimeout(() => setCopyStatus('idle'), 1500);
     };
 
-    const handleClear = () => {
-        setRequests([]);
-        setSelectedIdx(-1);
-        setEditorContent('');
-        setLatestResponse(null);
-    };
-
     const handleSend = async () => {
         if (!editorContent) return;
         setIsLoading(true);
@@ -213,8 +82,6 @@ function App() {
             const response = await dispatchRequest(editorContent);
             setLatestResponse(response);
             setActiveTab('response');
-
-            // If we have a baseline active, we might want to update the comparison logic or just show it
         } catch (e) {
             console.error("Dispatch Failed", e);
         } finally {
@@ -222,12 +89,20 @@ function App() {
         }
     };
 
-    // Filtering & Colors
-    const filteredRequests = requests.map((r, i) => ({ r, i })).filter(({ r }) => {
-        if (!filterQuery) return true;
-        const q = filterQuery.toLowerCase();
-        try { return (r.request.url || "").toLowerCase().includes(q) || (r.request.method || "").toLowerCase().includes(q); } catch (e) { return false; }
-    });
+    // Derived View Logic
+    const showRequestDiff = activeTab === 'request' && baselineRequest && selectedIdx !== -1;
+    const originalReqText = showRequestDiff ? (smartDiffMode ? smartDiff(baselineRaw) : baselineRaw) : '';
+    const modifiedReqText = showRequestDiff ? (smartDiffMode ? smartDiff(editorContent) : editorContent) : '';
+
+    const showResponseDiff = activeTab === 'response' && baselineResponse && latestResponse;
+    const getResponseText = (res: DispatchResponse | null) => {
+        if (!res) return '';
+        const headerString = Object.entries(res.headers).map(([k, v]) => `${k}: ${v}`).join('\n');
+        return `HTTP/1.1 ${res.status} ${res.statusText}\n${headerString}\n\n${res.body}`;
+    };
+
+    const originalResText = showResponseDiff && baselineResponse ? getResponseText(baselineResponse) : '';
+    const modifiedResText = activeTab === 'response' && latestResponse ? getResponseText(latestResponse) : '';
 
     const getMethodColor = (method: string) => {
         if (!method) return 'text-slate-300 bg-slate-500/10 border-slate-500/20';
@@ -248,42 +123,11 @@ function App() {
         return 'text-slate-400';
     };
 
-    // Determine view mode
-    const showRequestDiff = activeTab === 'request' && baselineRequest && selectedIdx !== -1;
-    const originalReqText = showRequestDiff ? (smartDiffMode ? smartDiff(baselineRaw) : baselineRaw) : '';
-    const modifiedReqText = showRequestDiff ? (smartDiffMode ? smartDiff(editorContent) : editorContent) : '';
-
-    // Response View Logic
-    // If we have a baselineResponse AND a latestResponse, show diff
-    const showResponseDiff = activeTab === 'response' && baselineResponse && latestResponse;
-
-    const getResponseText = (res: DispatchResponse | null) => {
-        if (!res) return '';
-        // Format response for display: Headers + Body ? Or just Body?
-        // Convention: Usually just Body in editor, headers in UI.
-        // But diffing works better if we can see headers too?
-        // Let's stick to Body for the main editor view, headers in the bar. Or maybe reconstruct raw response?
-        // Reconstructing raw response is consistent with request view.
-
-        const headerString = Object.entries(res.headers).map(([k, v]) => `${k}: ${v}`).join('\n');
-        return `HTTP/1.1 ${res.status} ${res.statusText}\n${headerString}\n\n${res.body}`;
-    };
-
-    const originalResText = showResponseDiff && baselineResponse ? getResponseText(baselineResponse) : '';
-    const modifiedResText = activeTab === 'response' && latestResponse ? getResponseText(latestResponse) : '';
-
-
-    const getCurrentOriginal = () => {
-        if (selectedIdx >= 0 && selectedIdx < requests.length) {
-            return harToRaw(requests[selectedIdx], cleanMode);
-        }
-        return '';
-    };
-    const isDirty = editorContent !== getCurrentOriginal();
+    const isDirty = selectedIdx >= 0 && editorContent !== harToRaw(requests[selectedIdx], cleanMode);
 
     return (
         <div className="flex h-screen w-screen bg-slate-950 text-slate-200 overflow-hidden font-sans">
-            {/* Sidebar (Same as before) */}
+            {/* Sidebar */}
             <ResizableBox
                 width={sidebarWidth}
                 height={Infinity}
@@ -328,7 +172,6 @@ function App() {
                 </div>
 
                 <div className="flex-1 overflow-auto scrollbar-thin scrollbar-thumb-slate-700/50">
-                    {/* List Items (Same) */}
                     {requests.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-40 text-slate-600 text-xs">
                             <Filter size={24} className="mb-2 opacity-20" />
@@ -340,27 +183,29 @@ function App() {
                         filteredRequests.map(({ r, i }) => {
                             const name = r.request.url.split('/').pop().split('?')[0] || '/';
                             const domain = new URL(r.request.url).hostname;
+                            const isSelected = selectedIdx === i;
+
                             return (
                                 <div
                                     key={i}
                                     onClick={() => setSelectedIdx(i)}
-                                    className={clsx("group px-3 py-2.5 cursor-pointer border-b border-slate-800/40 hover:bg-slate-800/50 transition-colors flex flex-col relative", selectedIdx === i ? "bg-blue-900/10" : "")}
+                                    className={clsx("group px-3 py-2.5 cursor-pointer border-b border-slate-800/40 hover:bg-slate-800/50 transition-colors flex flex-col relative", isSelected ? "bg-blue-900/10" : "")}
                                 >
-                                    {selectedIdx === i && <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-blue-500 rounded-r" />}
+                                    {isSelected && <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-blue-500 rounded-r" />}
                                     <div className="flex items-center justify-between mb-1.5">
                                         <div className="flex items-center space-x-2">
                                             <span className={clsx("text-[10px] font-bold px-1.5 py-0.5 rounded border leading-none tracking-wide", getMethodColor(r.request.method))}>{r.request.method}</span>
                                             <span className={clsx("text-xs font-mono font-medium", getStatusColor(r.request.response?.status || 0))}>{r.request.response?.status || '...'}</span>
                                         </div>
                                         <button
-                                            onClick={(e) => handlePin(r, e)}
+                                            onClick={(e) => handlePin(r, latestResponse, e)}
                                             className={clsx("opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-slate-700", baselineRequest === r ? "opacity-100 text-yellow-400" : "text-slate-500 hover:text-white")}
                                         >
                                             <Pin size={12} className={baselineRequest === r ? "fill-current" : ""} />
                                         </button>
                                     </div>
                                     <div className="flex flex-col min-w-0">
-                                        <span className={clsx("truncate text-xs font-medium mb-0.5", selectedIdx === i ? "text-blue-100" : "text-slate-300")}>{name}</span>
+                                        <span className={clsx("truncate text-xs font-medium mb-0.5", isSelected ? "text-blue-100" : "text-slate-300")}>{name}</span>
                                         <span className="truncate text-[10px] text-slate-500 font-mono">{domain}</span>
                                     </div>
                                 </div>
@@ -372,9 +217,8 @@ function App() {
 
             {/* Main Content */}
             <div className="flex-1 flex flex-col min-w-0 bg-slate-950">
-                {/* Top Toolbar / Tab Bar */}
+                {/* Toolbar */}
                 <div className="h-12 flex-shrink-0 border-b border-slate-800 flex items-center px-4 space-x-3 bg-slate-900 z-20">
-                    {/* Tabs */}
                     <div className="flex items-center bg-slate-950 rounded p-1 border border-slate-800 mr-2">
                         <button
                             onClick={() => setActiveTab('request')}
@@ -393,7 +237,6 @@ function App() {
                         </button>
                     </div>
 
-                    {/* Shared Toolbar Items */}
                     {activeTab === 'request' && (
                         <>
                             <div className="h-4 w-[1px] bg-slate-800 mx-1" />
@@ -424,7 +267,6 @@ function App() {
                         </div>
                     )}
 
-                    {/* Send / Copy Actions */}
                     {activeTab === 'request' ? (
                         <>
                             {validationError && <div className="flex items-center space-x-1 text-xs text-red-500 mr-2"><AlertTriangle size={12} /><span>{validationError}</span></div>}
@@ -454,16 +296,13 @@ function App() {
                             </button>
                         </>
                     ) : (
-                        // Response Tab Actions
                         <div className="flex items-center space-x-3">
                             {latestResponse ? (
-                                <>
-                                    <div className="flex items-center space-x-2 px-2 py-1 bg-slate-900 border border-slate-800 rounded">
-                                        <span className={clsx("text-xs font-mono font-bold", getStatusColor(latestResponse.status))}>{latestResponse.status} {latestResponse.statusText}</span>
-                                        <span className="text-slate-600 text-[10px]">|</span>
-                                        <span className="text-xs text-slate-400">{latestResponse.timeMs}ms</span>
-                                    </div>
-                                </>
+                                <div className="flex items-center space-x-2 px-2 py-1 bg-slate-900 border border-slate-800 rounded">
+                                    <span className={clsx("text-xs font-mono font-bold", getStatusColor(latestResponse.status))}>{latestResponse.status} {latestResponse.statusText}</span>
+                                    <span className="text-slate-600 text-[10px]">|</span>
+                                    <span className="text-xs text-slate-400">{latestResponse.timeMs}ms</span>
+                                </div>
                             ) : (
                                 <span className="text-xs text-slate-500 italic">No response yet</span>
                             )}
@@ -471,7 +310,7 @@ function App() {
                     )}
                 </div>
 
-                {/* Editor Area */}
+                {/* Editor Content */}
                 <div className="flex-1 overflow-hidden bg-slate-950 relative">
                     {selectedIdx === -1 ? (
                         <div className="flex flex-col items-center justify-center h-full text-slate-700 p-8 text-center">
@@ -490,12 +329,11 @@ function App() {
                             </div>
                         ) : (
                             <div className="h-full w-full relative">
-                                {/* Response View */}
                                 {latestResponse ? (
                                     showResponseDiff ? (
                                         <RequestDiffEditor original={originalResText} modified={modifiedResText} />
                                     ) : (
-                                        <RequestEditor value={getResponseText(latestResponse)} onChange={() => { }} /> // Read only by not using change handler effectively or passing readonly prop if added
+                                        <RequestEditor value={getResponseText(latestResponse)} onChange={() => { }} />
                                     )
                                 ) : (
                                     <div className="flex flex-col items-center justify-center h-full text-slate-700">

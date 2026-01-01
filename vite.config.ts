@@ -9,8 +9,10 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        sidepanel: resolve(__dirname, 'sidepanel.html'),
-        background: resolve(__dirname, 'src/background.ts'),
+        sidepanel: resolve(__dirname, 'src/pages/sidepanel.html'),
+        panel: resolve(__dirname, 'src/pages/panel.html'),
+        devtools: resolve(__dirname, 'src/pages/devtools.html'),
+        background: resolve(__dirname, 'src/extension/background/index.ts'),
       },
       output: {
         entryFileNames: `assets/[name].js`,

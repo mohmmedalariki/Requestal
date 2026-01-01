@@ -1,10 +1,12 @@
 
-import { webRequestToHar } from './utils/adapter';
+import { webRequestToHar } from '../../core/format/harAdapter';
 
-// Store body temporarily
+// Temporary storage for request bodies
 const requestBodies = new Map<string, any>();
 
-// 1. Capture Body
+// Constants
+const CLEANUP_INTERVAL_MS = 60_000;
+
 chrome.webRequest.onBeforeRequest.addListener(
     (details) => {
         if (details.requestBody) {
@@ -16,22 +18,21 @@ chrome.webRequest.onBeforeRequest.addListener(
     ["requestBody"]
 );
 
-// 2. Capture Headers & Broadcast
 chrome.webRequest.onBeforeSendHeaders.addListener(
     (details) => {
         const bodyDetails = requestBodies.get(details.requestId);
 
+        // Transform to HAR format
         const harRequest = webRequestToHar(details, bodyDetails);
 
-        // Broadcast to Side Panel
         chrome.runtime.sendMessage({
             type: "NEW_REQUEST",
             payload: harRequest
         }).catch(() => {
-            // Side panel might be closed, ignore error
+            // Panel closed or inactive; suppress error
         });
 
-        // Cleanup
+        // Cleanup immediately after processing
         requestBodies.delete(details.requestId);
         return undefined;
     },
@@ -39,10 +40,9 @@ chrome.webRequest.onBeforeSendHeaders.addListener(
     ["requestHeaders"]
 );
 
-// Cleanup stale entries periodically
+// Periodic cleanup for stale entries
 setInterval(() => {
     requestBodies.clear();
-}, 60000);
+}, CLEANUP_INTERVAL_MS);
 
-// Open Side Panel on action click (if enabled) or command
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });

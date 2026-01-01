@@ -4,7 +4,7 @@
     "version": "0.1.0",
     "description": "Professional Fuzzing Workflow Extension",
     "side_panel": {
-        "default_path": "sidepanel.html"
+        "default_path": "src/pages/sidepanel.html"
     },
     "background": {
         "service_worker": "assets/background.js",

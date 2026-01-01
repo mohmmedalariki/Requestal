@@ -1,4 +1,4 @@
-import { serializeBody } from './bodyConverter';
+import { serializeBody } from './converter';
 
 export function webRequestToHar(details: any, bodyData: any): any {
     // details: result of onBeforeSendHeaders (contains requestHeaders)

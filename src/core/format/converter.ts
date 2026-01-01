@@ -1,15 +1,20 @@
 
 /**
+ * Body Format Converter
+ * Handles conversion between JSON and Form-UrlEncoded formats, and format detection.
+ */
+
+/**
  * Converts a JSON object/string into application/x-www-form-urlencoded format.
- * Handles arrays by repeating keys (e.g., {a: [1, 2]} -> a=1&a=2).
  */
 export function jsonToForm(jsonInput: string | object): string {
     let obj: any;
+
     if (typeof jsonInput === 'string') {
         try {
             obj = JSON.parse(jsonInput);
         } catch (e) {
-            return jsonInput; // Return original if parsing fails
+            return jsonInput;
         }
     } else {
         obj = jsonInput;
@@ -23,18 +28,13 @@ export function jsonToForm(jsonInput: string | object): string {
         if (Array.isArray(value)) {
             value.forEach(v => append(key, v));
         } else if (typeof value === 'object' && value !== null) {
-            // Flatten nested objects? For standard form-urlencoded, often just stringified or dot notation
-            // But for fuzzing, usually flat or bracket notation is expected. 
-            // Let's stick to simple value -> string for now, or JSON stringify if complex
             params.append(key, JSON.stringify(value));
         } else {
             params.append(key, String(value));
         }
     };
 
-    Object.keys(obj).forEach(key => {
-        append(key, obj[key]);
-    });
+    Object.keys(obj).forEach(key => append(key, obj[key]));
 
     return params.toString();
 }
@@ -61,7 +61,7 @@ export function formToJson(formString: string): string {
 }
 
 /**
- * Detects the format of the body content
+ * Heuristically detects the format of the body content.
  */
 export function detectFormat(content: string): 'json' | 'form' | 'unknown' {
     const trimmed = content.trim();
@@ -70,11 +70,11 @@ export function detectFormat(content: string): 'json' | 'form' | 'unknown' {
             JSON.parse(trimmed);
             return 'json';
         } catch {
-            // Starts with JSON-like char but invalid invalid, still likely intended as JSON
+            // Likely intended as JSON despite parse error
             return 'json';
         }
     }
-    // Simple heuristic for form: contains = and doesn't look like JSON
+
     if (trimmed.includes('=') && !trimmed.includes('{')) {
         return 'form';
     }
@@ -82,24 +82,18 @@ export function detectFormat(content: string): 'json' | 'form' | 'unknown' {
 }
 
 /**
- * Strict serializer that respects Content-Type.
- * - Form: Flattens to key=value (no JSON chars allowed).
- * - JSON: Pretty prints.
+ * Serializes the body based on the Content-Type header.
  */
 export function serializeBody(body: any, contentType: string = ''): string {
     const isForm = contentType.toLowerCase().includes('application/x-www-form-urlencoded');
     const isJson = contentType.toLowerCase().includes('application/json');
 
     if (isForm) {
-        // Strict Form Serialization
-        // If body is already a string, just returned it (assuming it's formatted)
-        // If it's an object, we use jsonToForm
-        if (typeof body === 'string') return body; // fallback
+        if (typeof body === 'string') return body;
         return jsonToForm(body);
     }
 
     if (isJson) {
-        // Pretty Print JSON
         if (typeof body === 'string') {
             try {
                 const parsed = JSON.parse(body);
@@ -111,7 +105,6 @@ export function serializeBody(body: any, contentType: string = ''): string {
         return JSON.stringify(body, null, 2);
     }
 
-    // Default/Unknown
     if (typeof body === 'object') return JSON.stringify(body);
     return String(body);
 }
