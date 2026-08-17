@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local reports & internal plans
+TECHNICAL_REPORT.md
+Requestal-V2-Technical-Plan.md
+*.plan.md
