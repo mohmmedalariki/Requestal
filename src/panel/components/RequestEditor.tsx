@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import Editor, { type Monaco } from '@monaco-editor/react';
 
 interface Props {
@@ -10,9 +10,11 @@ interface Props {
 
 export const RequestEditor: React.FC<Props> = ({ value, onChange, language = "http", theme = "vs-dark" }) => {
     const editorRef = useRef<any>(null);
+    const modelRef = useRef<any>(null);
 
-    function handleEditorDidMount(editor: any, monaco: Monaco) {
+    const handleEditorDidMount = useCallback((editor: any, monaco: Monaco) => {
         editorRef.current = editor;
+        modelRef.current = editor.getModel();
 
         // Add "Inject FUZZ" action
         editor.addAction({
@@ -31,13 +33,35 @@ export const RequestEditor: React.FC<Props> = ({ value, onChange, language = "ht
                 }
             }
         });
-    }
+    }, []);
+
+    // §16.9 — Dispose Monaco model on unmount to prevent memory leaks
+    useEffect(() => {
+        return () => {
+            if (editorRef.current) {
+                try {
+                    editorRef.current.setModel(null);
+                } catch {
+                    // Safe reset fallback
+                }
+                editorRef.current = null;
+            }
+            if (modelRef.current && !modelRef.current.isDisposed()) {
+                try {
+                    modelRef.current.dispose();
+                } catch {
+                    // Safe disposal fallback
+                }
+                modelRef.current = null;
+            }
+        };
+    }, []);
 
     return (
         <Editor
             height="100%"
             defaultLanguage={language}
-            theme={theme} // "vs-dark" matches the requirement for high-performance/dev look
+            theme={theme}
             value={value}
             onChange={onChange}
             onMount={handleEditorDidMount}

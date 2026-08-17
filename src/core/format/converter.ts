@@ -13,7 +13,7 @@ export function jsonToForm(jsonInput: string | object): string {
     if (typeof jsonInput === 'string') {
         try {
             obj = JSON.parse(jsonInput);
-        } catch (e) {
+        } catch {
             return jsonInput;
         }
     } else {

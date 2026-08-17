@@ -1,11 +1,50 @@
 import { serializeBody } from './converter';
+import type { FidelityType, HarRequestObject } from '../../shared/utils/http';
 
-export function webRequestToHar(details: any, bodyData: any): any {
-    // details: result of onBeforeSendHeaders (contains requestHeaders)
-    // bodyData: result of onBeforeRequest (contains requestBody)
+export function extractBody(requestBody: any): { text: string | undefined; fidelity: FidelityType; reconstructed: boolean } {
+    if (!requestBody) {
+        return { text: undefined, fidelity: 'partial', reconstructed: false };
+    }
 
-    // Construct HAR-like object
-    const headers = details.requestHeaders || [];
+    // 1. ALWAYS prefer raw bytes - byte-identical to the wire, exact parameter ordering preserved
+    if (requestBody.raw && Array.isArray(requestBody.raw) && requestBody.raw.length > 0) {
+        try {
+            const decoder = new TextDecoder('utf-8');
+            let combinedText = '';
+            for (const chunk of requestBody.raw) {
+                if (chunk.bytes) {
+                    combinedText += decoder.decode(chunk.bytes, { stream: true });
+                } else if (chunk.file) {
+                    combinedText += `[File: ${chunk.file}]`;
+                }
+            }
+            combinedText += decoder.decode(); // flush
+            return { text: combinedText, fidelity: 'partial', reconstructed: false };
+        } catch {
+            // Fallthrough if decoding fails
+        }
+    }
+
+    // 2. formData is a fallback of last resort when Chrome does not provide raw bytes
+    if (requestBody.formData) {
+        const normalized: Record<string, any> = {};
+        Object.keys(requestBody.formData).forEach(key => {
+            const vals = requestBody.formData[key];
+            normalized[key] = Array.isArray(vals) && vals.length === 1 ? vals[0] : vals;
+        });
+
+        return {
+            text: serializeBody(normalized, 'application/x-www-form-urlencoded'),
+            fidelity: 'reconstructed',
+            reconstructed: true
+        };
+    }
+
+    return { text: undefined, fidelity: 'partial', reconstructed: false };
+}
+
+export function webRequestToHar(details: any, bodyData: any): HarRequestObject {
+    const headers = details.requestHeaders ? [...details.requestHeaders] : [];
 
     // Detect Content-Type
     let contentType = '';
@@ -14,46 +53,47 @@ export function webRequestToHar(details: any, bodyData: any): any {
         contentType = ctHeader.value;
     }
 
-    // Parse body if exists
-    let postData = undefined;
+    // Extract body with raw-bytes priority
+    let postData: { text?: string; mimeType?: string } | undefined = undefined;
+    let fidelity: FidelityType = 'partial';
+    const fidelityNotes: string[] = [];
+
     if (bodyData && bodyData.requestBody) {
-        if (bodyData.requestBody.raw && bodyData.requestBody.raw[0]) {
-            const rawBytes = bodyData.requestBody.raw[0].bytes;
-            const decoder = new TextDecoder("utf-8");
+        const extracted = extractBody(bodyData.requestBody);
+        if (extracted.text !== undefined) {
             postData = {
-                text: decoder.decode(rawBytes)
+                text: extracted.text,
+                mimeType: contentType || 'application/x-www-form-urlencoded'
             };
-        } else if (bodyData.requestBody.formData) {
-            // Handle form data strictly based on Content-Type
-            // formData is an object like { key: ["value"] }
-            // We need to flatten it appropriately
+            fidelity = extracted.fidelity;
+            if (extracted.reconstructed) {
+                fidelityNotes.push('Body reconstructed from formData dictionary; parameter order not guaranteed.');
+            }
+        }
+    }
 
-            // First, normalize formData to a simpler object or array structure that our converter understands
-            // Chrome's formData is { key: [val1, val2] }
-            const normalized: any = {};
-            Object.keys(bodyData.requestBody.formData).forEach(key => {
-                const vals = bodyData.requestBody.formData[key];
-                if (vals.length === 1) {
-                    normalized[key] = vals[0];
-                } else {
-                    normalized[key] = vals;
-                }
-            });
-
-            postData = {
-                text: serializeBody(normalized, contentType)
-            };
+    // Compute Content-Length if missing and body exists
+    if (postData?.text) {
+        const hasContentLength = headers.some((h: any) => h.name.toLowerCase() === 'content-length');
+        if (!hasContentLength) {
+            const byteLen = new TextEncoder().encode(postData.text).length;
+            headers.push({ name: 'Content-Length', value: String(byteLen) });
         }
     }
 
     return {
+        requestId: details.requestId,
+        fidelity,
+        fidelityNotes,
+        timestamp: details.timeStamp || Date.now(),
         request: {
             method: details.method,
             url: details.url,
-            httpVersion: 'HTTP/1.1', // Assumed, will be enforced by sanitization anyway
-            headers: headers,
-            postData: postData,
-            response: { status: 0 } // Pending response
-        }
+            httpVersion: 'HTTP/1.1',
+            headers,
+            postData,
+            response: { status: 0 }
+        },
+        initiator: details.initiator
     };
 }

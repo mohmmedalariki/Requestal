@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
     "name": "Requestal",
-    "version": "0.1.0",
-    "description": "Professional Fuzzing Workflow Extension",
+    "version": "2.0.0",
+    "description": "Professional Web Security, Interception & Fuzzing Suite",
     "side_panel": {
         "default_path": "src/pages/sidepanel.html"
     },
@@ -14,8 +14,11 @@
         "sidePanel",
         "webRequest",
         "storage",
+        "unlimitedStorage",
         "clipboardWrite",
-        "activeTab"
+        "activeTab",
+        "alarms",
+        "debugger"
     ],
     "host_permissions": [
         "<all_urls>"

@@ -1,96 +1,108 @@
-# Requestal: The Professional Fuzzing Workflow Extension
+# Requestal: Professional Web Security, Interception & Fuzzing Extension
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-0.1.0-green.svg)
+![Version](https://img.shields.io/badge/version-2.0.0-green.svg)
+![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-yellow.svg)
 
 ![Requestal Side Panel](screenshots/SidePanel.png)
 
-**Requestal** is a professional-grade Chrome DevTools extension designed to bridge the gap between manual web testing and automated fuzzing. It resides in the browser's Side Panel, allowing security researchers and developers to capture, analyze, modify, and replay network requests without leaving their workflow context.
-
-Unlike standard network tools, Requestal focuses on **smart automation**—handling format conversions, eliminating noise in diffs, and enforcing RFC compliance—capturing the nuance of complex web interactions that command-line tools often miss.
+**Requestal** is an enterprise-grade Google Chrome Side Panel extension designed to bridge the gap between manual web penetration testing and automated CLI fuzzing. Built for security researchers, bug bounty hunters, and developers, Requestal captures, intercepts, format-shifts, replays, and diffs HTTP traffic directly within your browser workspace.
 
 ---
 
-## 🚀 Key Features
+## 🚀 Key Features in V2.0
 
-### Live Request Capturing & Filtering
-Requestal listens to the browser's network stack in real-time.
--   **Follow Mode**: Automatically "tails" the traffic log, keeping the most recent request in focus.
--   **Smart Filtering**: Search by method (GET/POST) or URL keywords to isolate traffic.
--   **Clean Mode**: Strips ephemeral headers (e.g., `sec-ch-ua`, `cache-control`) to focus on the semantic core of the request.
+### 📡 1. Dual Capture & Live Traffic Interception (Pro Mode)
+* **Standard Engine**: Captures full HTTP requests, multipart data, and 302 login redirects via `chrome.webRequest`.
+* **Pro Mode Engine (CDP Debugger)**: Extracts full **response bodies** and JavaScript initiator call stacks using the Chrome DevTools Protocol.
+* **Live Intercept / Breakpoints**: Pause in-flight requests and responses, inspect/modify headers and payloads in Monaco Editor, and forward or drop traffic in real time.
 
-### Body Format Synchronization ("Smart Format")
-A unique engine that keeps the `Content-Type` header and the request body in sync.
--   **Auto-Conversion**: If you switch a header from `application/json` to `application/x-www-form-urlencoded` (or vice versa), the body content is automatically transcoded.
--   **RFC Enforcement**: Prevents invalid states, such as sending a JSON body with a Form header, by warning the user or blocking invalid "Smart Copy" actions.
+### 🔀 2. 1-Click Lossless Method Toggle (POST ⟷ GET)
+* **POST ➔ GET**: Automatically moves JSON or Form bodies into URL query parameters, strips `Content-Type` / `Content-Length`, and clears the body.
+* **GET ➔ POST**: Moves query parameters into the body, parses nested JSON objects, and intelligently restores `Content-Type: application/json` or `application/x-www-form-urlencoded`.
 
-### Send & Response System
-An internal HTTP client allows for immediate verification of payloads.
--   **Dispatcher**: Executes requests directly from the extension context, preserving session cookies and credentials.
--   **Protocol Enforcement**: Automatically enforces `https://` and cleans unsafe headers (like `Host`) to prevent browser blocking.
+### 👥 3. Multi-Account Auth Profiles (IDOR Testing)
+* Store session credentials for multiple roles (e.g. *Admin*, *Victim*, *Attacker*).
+* 1-Click swap `Cookie:` and `Authorization: Bearer` headers directly inside the active request editor to verify broken object-level authorization (BOLA/IDOR).
 
-![Response View](screenshots/Response.png)
+### 🎯 4. Target Scope Management & Passive Secret Scanner
+* **Scope Rules**: Define inclusion/exclusion regex patterns to isolate target applications and drop analytics/CDN noise.
+* **Passive Secret Scanner**: Real-time detection of exposed AWS keys, Bearer JWTs, GitHub tokens, Stripe API keys, and Slack webhooks.
 
--   **Response Diffing**:
-    -   **Baseline Pinning**: Pin a request to store its "known good" state (both request and response).
-    -   **Visual Diff**: Subsequent requests (e.g., after modifying a payload) are compared against the pinned baseline.
-    
-    ![Diff View](screenshots/Requestal.png)
+### 💻 5. Multi-Tool CLI Fuzzing Suite
+* Instant command generation for **`curl`**, **`ffuf`** (clusterbomb with `FUZZ` placeholders), **`sqlmap`**, and **`nuclei`**.
+* **1-Click `.req` File Download**: Save formatted raw HTTP requests directly to disk for command-line fuzzers (`sqlmap -r request.req`).
 
-    -   **Smart Diff**: Ignores trivial changes (timestamps, nonces) to highlight only semantic differences (status codes, error messages).
+### 🔍 6. Dual Diff Engine (Text & Structural JSON)
+* **Baseline Pinning**: Pin any "known-good" request/response as a baseline.
+* **Smart Noise Reduction (`smartDiff`)**: Automatically masks volatile timestamps, nonces, and cache headers.
+* **Structural JSON Diff**: Semantic key-level diffing displaying exact `+added`, `~modified`, and `-removed` metrics.
+
+### ⚡ 7. IndexedDB Persistence & List Virtualization
+* Stores 10,000+ requests persistently via Dexie IndexedDB with automatic LRU storage retention.
+* Smooth 60 FPS scrolling powered by `@tanstack/react-virtual`.
+* **HAR 1.2 Session Export**: Export complete traffic history for Burp Suite, Caido, and Wireshark.
 
 ---
 
 ## 🛠️ Usage Examples
 
-### API Fuzzing Workflow
-1.  **Capture**: Navigate to a target form. Requestal captures the `POST /login` request.
-2.  **Pin**: Click "Pin" to establish this as the baseline.
-3.  **Modify**: Edit the JSON body to inject a SQL payload.
-4.  **Send**: Click "Send".
-5.  **Analyze**: The "Response" tab immediately shows a diff where the server's error message appeared, ignoring the timestamp change in the header.
+### 1. IDOR & Access Control Testing
+1. Navigate to target endpoint (`/api/v1/orders/102`).
+2. Pin the request as **Baseline**.
+3. Open the **Auth Profile** dropdown and select `Victim User B` session token.
+4. Click **Send** and switch to **Diff View** to instantly inspect differences in status code and response payload.
 
-![Editing Request](screenshots/Editing.jpeg)
+### 2. Method Switching & Parser Confusion
+1. Select a `POST /api/v1/search` request with a JSON body `{"query": "admin", "page": 1}`.
+2. Click the **⇄ (Method Toggle)** button in the top toolbar.
+3. Requestal converts the request to `GET /api/v1/search?query=admin&page=1` with cleaned headers.
+4. Click **⇄** again to seamlessly convert back to `POST` with the exact JSON body structure restored.
 
-### Format Shifting
-1.  **Capture**: Capture a standard JSON API request.
-2.  **Toggle**: Determine if the server accepts URL Encoded data to bypass a WAF.
-3.  **Action**: Change `Content-Type: application/json` to `application/x-www-form-urlencoded`.
-4.  **Result**: Requestal's **Smart Format** engine instantly rewrites the body, e.g., `{"id":1}` becomes `id=1`.
+### 3. CLI Fuzzing Bridge (`ffuf` / `sqlmap`)
+1. In the Monaco editor, select any parameter value and press **Ctrl+Cmd+I** (or **Ctrl+I**) to inject `FUZZ`.
+2. Click the **CLI** button to open the command generator drawer.
+3. Copy the generated `ffuf -request request.req -request-proto https -w wordlist.txt` command or download the `.req` file directly.
 
 ---
 
-## 💻 Technical Stack
+## 💻 Tech Stack
 
--   **Frontend**: React 18, TypeScript, Vite, TailwindCSS
--   **Editor**: Monaco Editor
--   **Icons**: Lucide React
--   **State**: Chrome Storage & React State
+- **Extension Framework**: Chrome Manifest V3 (MV3), Chrome Side Panel API, Chrome DevTools Protocol (CDP)
+- **UI & State**: React 19, Zustand, TypeScript, Tailwind CSS v4, `@tanstack/react-virtual`
+- **Editor**: Monaco Editor (`@monaco-editor/react`) with custom web workers
+- **Database**: Dexie (IndexedDB) with LRU Retention Pruning
+- **Icons**: Lucide React
+
+---
 
 ## 📦 Installation & Development
 
-1.  **Clone the repository**:
-    ```bash
-    git clone https://github.com/mohmmedalariki/Requestal.git
-    cd Requestal
-    ```
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/mohmmedalariki/Requestal.git
+   cd Requestal
+   ```
 
-2.  **Install dependencies**:
-    ```bash
-    npm install
-    ```
+2. **Install dependencies**:
+   ```bash
+   npm install
+   ```
 
-3.  **Build for production**:
-    ```bash
-    npm run build
-    ```
-    The output will be in the `dist` folder.
+3. **Run tests & static analysis**:
+   ```bash
+   npm test
+   npm run lint
+   ```
 
-4.  **Load in Chrome**:
-    -   Open `chrome://extensions/`
-    -   Enable **Developer mode**
-    -   Click **Load unpacked**
-    -   Select the `dist` folder
+4. **Build for production**:
+   ```bash
+   npm run build
+   ```
+   The compiled extension will be in the `dist` directory.
 
-----
-
+5. **Load in Chrome**:
+   - Open `chrome://extensions/`
+   - Enable **Developer mode**
+   - Click **Load unpacked**
+   - Select the `dist` folder in your project directory
