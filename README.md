@@ -4,7 +4,7 @@
 ![Version](https://img.shields.io/badge/version-2.0.0-green.svg)
 ![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-yellow.svg)
 
-![Requestal Side Panel](screenshots/SidePanel.png)
+![Requestal Side Panel](screenshots/V2.png)
 
 **Requestal** is an enterprise-grade Google Chrome Side Panel extension designed to bridge the gap between manual web penetration testing and automated CLI fuzzing. Built for security researchers, bug bounty hunters, and developers, Requestal captures, intercepts, format-shifts, replays, and diffs HTTP traffic directly within your browser workspace.
 
